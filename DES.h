@@ -31,12 +31,11 @@ class DES {
                 // split into left and right (long long necessary to prevent loss of data via overflow)
                 left = (IPBits & ((((uint64_t)1 << 32) - 1) << 32)) >> 32;
                 right = IPBits & (((uint64_t)1 << 32) - 1);
-                rightCopy;
 
                 // 16 round Feistel network
                 for (int i = 0; i < this->ROUNDS; i++) {
 
-                    roundKey = this->rotateBits(roundKey, this->leftShiftMatrix[i]);
+                    roundKey = this->rotateBitsLeft(roundKey, this->shiftMatrix[i]);
                     rightCopy = right;
                     right = left ^ this->fFunction(this->permutedChoice2(roundKey), right);
                     left = rightCopy;
@@ -57,7 +56,40 @@ class DES {
 
         string decrypt(string key, string ciphertext) {
 
-            return "0";
+            unsigned long long int roundKey, bits, IPBits, left, right, rightCopy, finalBits;
+            string message = "";
+
+            roundKey = this->permutedChoice1(stoull(key, NULL, 16));   // prepare key
+
+            // loop through message blocks (size 64 bits)
+            for (int i = 0; i < (ciphertext.length() / (this->BLOCK_SIZE / 4)); i++) {
+
+                bits = stoull(ciphertext.substr(this->BLOCK_SIZE * i, (this->BLOCK_SIZE * (i + 1)) - 1), NULL, 16);  // extract submessage, convert to bits
+                IPBits = this->initialPermutation(bits);
+                
+                // split into left and right (long long necessary to prevent loss of data via overflow)
+                left = (IPBits & ((((uint64_t)1 << 32) - 1) << 32)) >> 32;
+                right = IPBits & (((uint64_t)1 << 32) - 1);
+
+                // 16 round Feistel network
+                for (int i = 0; i < this->ROUNDS; i++) {
+
+                    rightCopy = right;
+                    right = left ^ this->fFunction(this->permutedChoice2(roundKey), right);
+                    left = rightCopy;
+                    roundKey = this->rotateBitsRight(roundKey, this->shiftMatrix[this->ROUNDS - 1 - i]);
+
+                }
+
+                // convert back to hex string and add it to the final ciphertext
+                finalBits = this->finalPermutation((right << 32) | left);
+                stringstream stream;
+                stream << setfill('0') << setw(sizeof(finalBits)*2) << hex << finalBits;
+                message = message + stream.str();
+
+            }
+
+            return message;
 
         }
     
@@ -122,7 +154,7 @@ class DES {
             }
         };
         int permutationMatrix[32] = {16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10, 2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25};
-        int leftShiftMatrix[16] = {1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1};
+        int shiftMatrix[16] = {1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1};
 
 
         unsigned long long int permutate(const unsigned long long int bits, const int matrix[], const int inputSize, const int outputSize) {
@@ -146,7 +178,7 @@ class DES {
 
         }
 
-        unsigned long long int rotateBits(const unsigned long long int bits, const int nLeftShifts) {
+        unsigned long long int rotateBitsLeft(const unsigned long long int bits, const int nLeftShifts) {
             /*
                 Rotates the left and right halves of a 64 bit integer to the left a specified amount of times. Left overflow for each half
                 will be placed at the right of the that half.
@@ -162,6 +194,29 @@ class DES {
                 bitBlock = (((((uint64_t)1 << 28) - 1) << (28 * (1 - i))) & bits) >> (28 * (1 - i));    // extract left/right blocks
                 extractedBits = ((uint64_t)((nLeftShifts * 2) - 1) << (28 - nLeftShifts)) & bitBlock;   // extract overflow bits
                 finalBits = finalBits | ((((bitBlock ^ extractedBits) << nLeftShifts) | (extractedBits >> (28 - nLeftShifts))) << (28 * (1 - i)));  // XOR with bit block, shift it left, append overflow bits to right
+
+            }
+
+            return finalBits;
+
+        }
+
+        unsigned long long int rotateBitsRight(const unsigned long long int bits, const int nRightShifts) {
+            /*
+                Rotates the left and right halves of a 64 bit integer to the right a specified amount of times. Right overflow for each half
+                will be placed at the left of the that half.
+            */
+
+            unsigned long long int bitBlock, finalBits;
+            unsigned int extractedBits;
+
+            finalBits = 0;
+
+            for (int i = 0; i < 2; i++) {
+
+                bitBlock = (((((uint64_t)1 << 28) - 1) << (28 * (1 - i))) & bits) >> (28 * (1 - i));    // extract left/right blocks
+                extractedBits = ((uint64_t)(nRightShifts * 2) - 1) & bitBlock;                         // extract overflow bits 
+                finalBits = finalBits | (((bitBlock >> nRightShifts) | (extractedBits << (28 - nRightShifts))) << (28 * (1 - i)));   // shift bit block, append overflow bits to the left
 
             }
 
